@@ -41,7 +41,9 @@ def moe_fused_mul_sum_kernel(
         b_val = tl.load(b_base + n, mask=m_mask, other=0.0).to(tl.float32)
         if has_expert_map:
             id_val = tl.load(top_ids_ptr + offs_m * top_k + n, mask=m_mask, other=0)
-            expert_mask = tl.load(expert_map_ptr + id_val) >= 0
+            valid_id = id_val >= 0
+            local_id = tl.load(expert_map_ptr + id_val, mask=valid_id, other=-1)
+            expert_mask = valid_id & (local_id >= 0)
             a_vec = tl.load(
                 a_base + n * size,
                 mask=mask & expert_mask[:, None],
@@ -151,7 +153,8 @@ def moe_fused_mul_sum(
         outputs: Optional pre-allocated output tensor.
             Shape: (num_tokens, hidden_size).
         topk_ids: Optional indices of the top-k experts. Used when
-            `expert_map` is provided. Shape: (num_tokens, top_k).
+            `expert_map` is provided. A negative id marks a padded row and
+            contributes nothing. Shape: (num_tokens, top_k).
         expert_map: Optional mapping for Expert Parallelism. A value < 0
             indicates an invalid token/expert pair that will be skipped.
 
